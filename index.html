@@ -1355,11 +1355,13 @@
         let shortlistRef = null;
         let profilesRef = null;
         let finalScheduleRef = null;
+        let skippedWeeksRef = null;
 
         let campsData = [];
         let shortlist = { child1: [], child2: [] };
         let finalSchedule = { child1: [], child2: [] };
         let childProfiles = { child1: {}, child2: {} };
+        let skippedWeeks = { child1: [], child2: [] };
         let currentTab = 'browse';
         let currentView = 'calendar';
         let currentFinalView = 'cards';
@@ -1382,6 +1384,7 @@
             shortlistRef = database.ref(`families/${familyCode}/shortlist`);
             profilesRef = database.ref(`families/${familyCode}/profiles`);
             finalScheduleRef = database.ref(`families/${familyCode}/finalSchedule`);
+            skippedWeeksRef = database.ref(`families/${familyCode}/skippedWeeks`);
         }
 
         function submitFamilyCode() {
@@ -2147,6 +2150,101 @@
             }
         }
 
+        // Toggle skip week for a child
+        function toggleSkipWeek(week, childId) {
+            if (!skippedWeeks[childId]) {
+                skippedWeeks[childId] = [];
+            }
+
+            const existingIndex = skippedWeeks[childId].findIndex(w => w.week === week || w === week);
+            
+            if (existingIndex > -1) {
+                // Un-skip this week
+                skippedWeeks[childId].splice(existingIndex, 1);
+            } else {
+                // Skip this week (with empty note for now)
+                skippedWeeks[childId].push({ week: week, note: '' });
+            }
+
+            saveSkippedWeeks();
+            
+            // Re-render current view
+            if (currentTab === 'shortlist') {
+                renderShortlistTab();
+            } else if (currentTab === 'final') {
+                renderFinalSchedule();
+            }
+        }
+
+        // Save skip note
+        function saveSkipNote(week, childId, note) {
+            if (!skippedWeeks[childId]) {
+                skippedWeeks[childId] = [];
+            }
+
+            const skipEntry = skippedWeeks[childId].find(w => w.week === week);
+            if (skipEntry) {
+                skipEntry.note = note;
+                saveSkippedWeeks();
+            }
+        }
+
+        // Check if a week is skipped for a child
+        function isWeekSkipped(week, childId) {
+            if (!skippedWeeks[childId]) return false;
+            return skippedWeeks[childId].some(w => w.week === week || w === week);
+        }
+
+        // Get skip note for a week
+        function getSkipNote(week, childId) {
+            if (!skippedWeeks[childId]) return '';
+            const skipEntry = skippedWeeks[childId].find(w => w.week === week);
+            return skipEntry ? skipEntry.note : '';
+        }
+
+        // Save skipped weeks to Firebase
+        function saveSkippedWeeks() {
+            if (!skippedWeeksRef) return;
+            
+            skippedWeeksRef.set(skippedWeeks)
+                .then(() => {
+                    console.log('✓ Saved skipped weeks to Firebase');
+                })
+                .catch((error) => {
+                    console.error('Error saving skipped weeks:', error);
+                });
+        }
+
+        // Load skipped weeks from Firebase
+        function loadSkippedWeeksFromFirebase() {
+            skippedWeeksRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data && typeof data === 'object') {
+                    // Handle both old format (array of strings) and new format (array of objects)
+                    skippedWeeks = {
+                        child1: Array.isArray(data.child1) ? data.child1.map(w => 
+                            typeof w === 'string' ? { week: w, note: '' } : w
+                        ) : [],
+                        child2: Array.isArray(data.child2) ? data.child2.map(w => 
+                            typeof w === 'string' ? { week: w, note: '' } : w
+                        ) : []
+                    };
+                    console.log('✓ Loaded skipped weeks from Firebase:', skippedWeeks);
+                } else {
+                    skippedWeeks = { child1: [], child2: [] };
+                }
+
+                // Re-render if on shortlist or final tab
+                if (currentTab === 'shortlist' || currentTab === 'final') {
+                    if (currentTab === 'shortlist') {
+                        renderShortlistTab();
+                    } else {
+                        renderFinalSchedule();
+                    }
+                }
+            });
+        }
+
         // Toggle week section (Shortlist)
         function toggleWeekSection(week) {
             const section = document.querySelector(`.week-section[data-week="${week}"]`);
@@ -2378,24 +2476,28 @@
                 const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
                 const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
 
+                // Check if weeks are skipped
+                const child1Skipped = isWeekSkipped(week, 'child1');
+                const child2Skipped = isWeekSkipped(week, 'child2');
+
                 // Coverage detection
                 const child1Coverage = child1Camps[0] ? detectCoverage(child1Camps[0]) : null;
                 const child2Coverage = child2Camps[0] ? detectCoverage(child2Camps[0]) : null;
 
                 // Status badges
                 const statuses = [];
-                if (child1Camps.length === 0 && child2Camps.length === 0) {
+                if (child1Camps.length === 0 && child2Camps.length === 0 && !child1Skipped && !child2Skipped) {
                     statuses.push('<span class="status-badge status-gap">⚠️ No camps</span>');
                 } else {
-                    if (child1Camps.length === 0) statuses.push(`<span class="status-badge status-gap">⚠️ ${child1Name} needs camp</span>`);
-                    if (child2Camps.length === 0) statuses.push(`<span class="status-badge status-gap">⚠️ ${child2Name} needs camp</span>`);
+                    if (child1Camps.length === 0 && !child1Skipped) statuses.push(`<span class="status-badge status-gap">⚠️ ${child1Name} needs camp</span>`);
+                    if (child2Camps.length === 0 && !child2Skipped) statuses.push(`<span class="status-badge status-gap">⚠️ ${child2Name} needs camp</span>`);
                     
-                    // Check coverage
-                    if (child1Coverage && !child1Coverage.fullDay) {
+                    // Check coverage (only if not skipped)
+                    if (child1Coverage && !child1Coverage.fullDay && !child1Skipped) {
                         if (!child1Coverage.am) statuses.push(`<span class="status-badge status-gap">⚠️ ${child1Name} needs AM</span>`);
                         if (!child1Coverage.pm) statuses.push(`<span class="status-badge status-gap">⚠️ ${child1Name} needs PM</span>`);
                     }
-                    if (child2Coverage && !child2Coverage.fullDay) {
+                    if (child2Coverage && !child2Coverage.fullDay && !child2Skipped) {
                         if (!child2Coverage.am) statuses.push(`<span class="status-badge status-gap">⚠️ ${child2Name} needs AM</span>`);
                         if (!child2Coverage.pm) statuses.push(`<span class="status-badge status-gap">⚠️ ${child2Name} needs PM</span>`);
                     }
@@ -2418,15 +2520,14 @@
                         </div>
 
                         <div class="week-card-body">
-                            ${child1Camps.length > 0 || child2Camps.length > 0 ? `
-                                ${renderChildSchedule(child1Camps, 'child1', child1Name, child1Color)}
-                                ${renderChildSchedule(child2Camps, 'child2', child2Name, child2Color)}
-                            ` : `
+                            ${renderChildScheduleWithSkip(child1Camps, 'child1', child1Name, child1Color, week, child1Skipped)}
+                            ${renderChildScheduleWithSkip(child2Camps, 'child2', child2Name, child2Color, week, child2Skipped)}
+                            ${child1Camps.length === 0 && child2Camps.length === 0 && !child1Skipped && !child2Skipped ? `
                                 <div style="text-align: center; padding: 20px; color: #999;">
                                     No camps scheduled this week
                                     <br><a href="#" onclick="switchToTab('shortlist'); return false;" style="color: #FF6600;">Browse camps</a>
                                 </div>
-                            `}
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -2464,6 +2565,40 @@
                         ${childName}
                     </div>
                     ${camps.map(camp => renderFinalCampCard(camp, childId, color)).join('')}
+                </div>
+            `;
+        }
+
+        // Render child's schedule with skip toggle (for Final Schedule)
+        function renderChildScheduleWithSkip(camps, childId, childName, color, week, isSkipped) {
+            return `
+                <div class="child-schedule">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div class="child-schedule-header" style="background: ${color}20; border-left: 4px solid ${color}; margin-bottom: 0;">
+                            ${childName}
+                        </div>
+                        <label style="font-size: 13px; cursor: pointer; user-select: none;">
+                            <input type="checkbox" ${isSkipped ? 'checked' : ''} 
+                                   onchange="toggleSkipWeek('${week}', '${childId}')"
+                                   onclick="event.stopPropagation()">
+                            ${isSkipped ? '✓ Skip this week' : 'Skip this week'}
+                        </label>
+                    </div>
+                    ${isSkipped ? `
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" 
+                                   placeholder="Why? (e.g., vacation, with grandparents...)" 
+                                   value="${getSkipNote(week, childId)}"
+                                   onchange="saveSkipNote('${week}', '${childId}', this.value)"
+                                   onclick="event.stopPropagation()"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                        </div>
+                    ` : ''}
+                    ${camps.length > 0 ? camps.map(camp => renderFinalCampCard(camp, childId, color)).join('') : 
+                      (!isSkipped ? '<div style="color: #999; font-size: 13px; padding: 10px; background: #f8f9fa; border-radius: 4px;">No camps scheduled</div>' : 
+                       `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
+                            ✓ Week skipped${getSkipNote(week, childId) ? ': ' + getSkipNote(week, childId) : ' - no camp needed'}
+                        </div>`)}
                 </div>
             `;
         }
@@ -2862,7 +2997,12 @@
                 const showChild1 = !selectedChild || selectedChild === 'child1';
                 const showChild2 = !selectedChild || selectedChild === 'child2';
 
-                const hasGap = (showChild1 && child1Camps.length === 0) || (showChild2 && child2Camps.length === 0);
+                // Check if weeks are skipped
+                const child1Skipped = isWeekSkipped(week, 'child1');
+                const child2Skipped = isWeekSkipped(week, 'child2');
+
+                const hasGap = (showChild1 && child1Camps.length === 0 && !child1Skipped) || 
+                              (showChild2 && child2Camps.length === 0 && !child2Skipped);
                 const isEmpty = child1Camps.length === 0 && child2Camps.length === 0;
 
                 // Check for conflicts in this specific week
@@ -2884,10 +3024,32 @@
                         </div>
                         <div class="week-camps">
                             ${isEmpty ? '<div class="week-empty">No camps selected for this week</div>' : ''}
-                            ${showChild1 && child1Camps.length > 0 ? `
+                            ${showChild1 ? `
                                 <div class="child-camps">
-                                    <div class="child-label" style="background: ${child1Color}; color: white;">👧 ${child1Name}</div>
-                                    ${renderCampCards(child1Camps, 'child1')}
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <div class="child-label" style="background: ${child1Color}; color: white; margin-bottom: 0;">👧 ${child1Name}</div>
+                                        <label style="font-size: 13px; cursor: pointer; user-select: none;">
+                                            <input type="checkbox" ${child1Skipped ? 'checked' : ''} 
+                                                   onchange="toggleSkipWeek('${week}', 'child1')"
+                                                   onclick="event.stopPropagation()">
+                                            ${child1Skipped ? '✓ Skip this week' : 'Skip this week'}
+                                        </label>
+                                    </div>
+                                    ${child1Skipped ? `
+                                        <div style="margin-bottom: 10px;">
+                                            <input type="text" 
+                                                   placeholder="Why? (e.g., vacation, with grandparents...)" 
+                                                   value="${getSkipNote(week, 'child1')}"
+                                                   onchange="saveSkipNote('${week}', 'child1', this.value)"
+                                                   onclick="event.stopPropagation()"
+                                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                        </div>
+                                    ` : ''}
+                                    ${child1Camps.length > 0 ? renderCampCards(child1Camps, 'child1') : 
+                                      (!child1Skipped ? '<div style="color: #999; font-size: 13px; padding: 10px;">No camps added</div>' : 
+                                       `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
+                                            ✓ Week skipped${getSkipNote(week, 'child1') ? ': ' + getSkipNote(week, 'child1') : ' - no camp needed'}
+                                        </div>`)}
                                     ${child1WeekConflicts.length > 0 ? `
                                         <div style="font-size: 12px; color: #856404; margin-top: 5px; padding: 5px; background: #fff3cd; border-radius: 4px;">
                                             💡 Time overlap in this week
@@ -2895,10 +3057,32 @@
                                     ` : ''}
                                 </div>
                             ` : ''}
-                            ${showChild2 && child2Camps.length > 0 ? `
+                            ${showChild2 ? `
                                 <div class="child-camps">
-                                    <div class="child-label" style="background: ${child2Color}; color: white;">👦 ${child2Name}</div>
-                                    ${renderCampCards(child2Camps, 'child2')}
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <div class="child-label" style="background: ${child2Color}; color: white; margin-bottom: 0;">👦 ${child2Name}</div>
+                                        <label style="font-size: 13px; cursor: pointer; user-select: none;">
+                                            <input type="checkbox" ${child2Skipped ? 'checked' : ''} 
+                                                   onchange="toggleSkipWeek('${week}', 'child2')"
+                                                   onclick="event.stopPropagation()">
+                                            ${child2Skipped ? '✓ Skip this week' : 'Skip this week'}
+                                        </label>
+                                    </div>
+                                    ${child2Skipped ? `
+                                        <div style="margin-bottom: 10px;">
+                                            <input type="text" 
+                                                   placeholder="Why? (e.g., vacation, with grandparents...)" 
+                                                   value="${getSkipNote(week, 'child2')}"
+                                                   onchange="saveSkipNote('${week}', 'child2', this.value)"
+                                                   onclick="event.stopPropagation()"
+                                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                        </div>
+                                    ` : ''}
+                                    ${child2Camps.length > 0 ? renderCampCards(child2Camps, 'child2') : 
+                                      (!child2Skipped ? '<div style="color: #999; font-size: 13px; padding: 10px;">No camps added</div>' : 
+                                       `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
+                                            ✓ Week skipped${getSkipNote(week, 'child2') ? ': ' + getSkipNote(week, 'child2') : ' - no camp needed'}
+                                        </div>`)}
                                     ${child2WeekConflicts.length > 0 ? `
                                         <div style="font-size: 12px; color: #856404; margin-top: 5px; padding: 5px; background: #fff3cd; border-radius: 4px;">
                                             💡 Time overlap in this week
@@ -3349,10 +3533,11 @@
                 setupEventListeners();
                 renderCamps();
                 
-                // Load shortlist, profiles, and final schedule from Firebase
+                // Load shortlist, profiles, final schedule, and skipped weeks from Firebase
                 loadShortlistFromFirebase();
                 loadProfilesFromFirebase();
                 loadFinalScheduleFromFirebase();
+                loadSkippedWeeksFromFirebase();
                 
                 showToast('✅ Connected! Changes sync in real-time.', 'success');
             }
