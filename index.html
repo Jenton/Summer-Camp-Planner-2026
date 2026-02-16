@@ -158,9 +158,18 @@
             background: white;
         }
 
+        .camp-card.finalized-camp {
+            border-left: 4px solid #28a745;
+            background: #f0f9f4;
+        }
+
         .camp-card:hover {
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             border-color: #FF6600;
+        }
+
+        .camp-card.finalized-camp:hover {
+            border-color: #28a745;
         }
 
         .camp-card-header {
@@ -1996,6 +2005,11 @@
             }
         }
 
+        // Check if a camp is in the final schedule
+        function isCampFinalized(campId, childId) {
+            return (finalSchedule[childId] || []).some(c => c.id === campId);
+        }
+
         // Add camp to final schedule
         function addToFinalSchedule(campId, childId) {
             const camp = campsData.find(c => c.id === campId);
@@ -3001,24 +3015,23 @@
                 const child1Skipped = isWeekSkipped(week, 'child1');
                 const child2Skipped = isWeekSkipped(week, 'child2');
 
-                const hasGap = (showChild1 && child1Camps.length === 0 && !child1Skipped) || 
-                              (showChild2 && child2Camps.length === 0 && !child2Skipped);
+                // Only show gap warnings in shortlist if both children have no camps AND neither is skipped
+                // This is more informational, not a "must fix" warning
                 const isEmpty = child1Camps.length === 0 && child2Camps.length === 0;
 
-                // Check for conflicts in this specific week
+                // Check for conflicts in this specific week - KEEP these in shortlist
                 const child1WeekConflicts = detectConflicts(child1Camps);
                 const child2WeekConflicts = detectConflicts(child2Camps);
                 const hasConflict = child1WeekConflicts.length > 0 || child2WeekConflicts.length > 0;
 
                 return `
-                    <div class="week-section ${hasGap ? 'has-gap' : ''}" data-week="${week}">
+                    <div class="week-section" data-week="${week}">
                         <div class="week-header" onclick="toggleWeekSection(${week})">
                             <div class="week-header-left">
                                 <span class="week-toggle">▼</span>
                                 <span>Week ${week}</span>
                             </div>
                             <div style="display: flex; gap: 10px; align-items: center;">
-                                ${hasGap ? '<span>⚠️ Needs camps</span>' : ''}
                                 ${hasConflict ? '<span style="color: #ffc107;">⚡ Overlap</span>' : ''}
                             </div>
                         </div>
@@ -3157,10 +3170,15 @@
         }
 
         function renderFullCampCard(camp, childId) {
+            const isFinalized = isCampFinalized(camp.id, childId);
+            
             return `
-                <div class="camp-card">
+                <div class="camp-card ${isFinalized ? 'finalized-camp' : ''}">
                     <div class="camp-card-header">
-                        <div class="camp-name">${camp.name}</div>
+                        <div class="camp-name">
+                            ${camp.name}
+                            ${isFinalized ? '<span style="color: #28a745; font-size: 13px; font-weight: 600; margin-left: 8px;">✓ Finalized</span>' : ''}
+                        </div>
                         <div class="camp-week">Week ${camp.week}</div>
                     </div>
                     <div class="camp-details">
@@ -3172,7 +3190,10 @@
                     </div>
                     ${camp.description ? `<div class="camp-description">${camp.description}</div>` : ''}
                     <div class="camp-actions">
-                        <button class="btn btn-primary btn-small" onclick="addToFinalSchedule('${camp.id}', '${childId}')">✓ Finalize</button>
+                        ${isFinalized ? 
+                            '<span style="color: #28a745; font-size: 13px;">✓ Added to Final Schedule</span>' :
+                            '<button class="btn btn-primary btn-small" onclick="addToFinalSchedule(\''+camp.id+'\', \''+childId+'\')">✓ Finalize</button>'
+                        }
                         <button class="btn btn-remove btn-small" onclick="removeFromShortlist('${camp.id}', '${childId}')">Remove</button>
                         ${camp.registerLink ? `<a href="${camp.registerLink}" target="_blank" class="btn btn-secondary btn-small">Register →</a>` : ''}
                     </div>
