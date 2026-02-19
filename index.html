@@ -220,10 +220,29 @@
             color: #666;
             line-height: 1.5;
             margin-bottom: 12px;
+        }
+        
+        .camp-description.truncated {
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+        }
+        
+        .show-more-btn {
+            background: none;
+            border: none;
+            color: #FF6600;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+            margin-top: 5px;
+            display: inline-block;
+        }
+        
+        .show-more-btn:hover {
+            text-decoration: underline;
         }
 
         .camp-actions {
@@ -1970,7 +1989,10 @@
                         <div class="camp-detail"><strong>📍 Location:</strong> ${camp.location}</div>
                         <div class="camp-detail"><strong>💰 Fee:</strong> ${camp.campFee}</div>
                     </div>
-                    ${camp.description ? `<div class="camp-description">${camp.description}</div>` : ''}
+                    ${camp.description ? `
+                        <div class="camp-description truncated" id="desc-${camp.id}">${camp.description}</div>
+                        <button class="show-more-btn" id="btn-${camp.id}" onclick="toggleDescription('${camp.id}')">Show more ▼</button>
+                    ` : ''}
                     <div class="camp-actions">
                         <button class="btn btn-primary btn-small" style="background: ${child1Color}; border-color: ${child1Color};" onclick="addToShortlist('${camp.id}', 'child1')">+ ${child1Name}</button>
                         <button class="btn btn-primary btn-small" style="background: ${child2Color}; border-color: ${child2Color};" onclick="addToShortlist('${camp.id}', 'child2')">+ ${child2Name}</button>
@@ -1981,6 +2003,22 @@
             
             // Update filter status
             updateFilterStatus();
+        }
+
+        // Toggle camp description expansion
+        function toggleDescription(descId) {
+            const descEl = document.getElementById(`desc-${descId}`);
+            const btnEl = document.getElementById(`btn-${descId}`);
+            
+            if (!descEl || !btnEl) return;
+            
+            if (descEl.classList.contains('truncated')) {
+                descEl.classList.remove('truncated');
+                btnEl.textContent = 'Show less ▲';
+            } else {
+                descEl.classList.add('truncated');
+                btnEl.textContent = 'Show more ▼';
+            }
         }
 
         function addToShortlist(campId, childId) {
@@ -3188,7 +3226,10 @@
                         <div class="camp-detail"><strong>📍 Location:</strong> ${camp.location}</div>
                         <div class="camp-detail"><strong>💰 Fee:</strong> ${camp.campFee}</div>
                     </div>
-                    ${camp.description ? `<div class="camp-description">${camp.description}</div>` : ''}
+                    ${camp.description ? `
+                        <div class="camp-description truncated" id="desc-shortlist-${camp.id}-${childId}">${camp.description}</div>
+                        <button class="show-more-btn" id="btn-shortlist-${camp.id}-${childId}" onclick="toggleDescription('shortlist-${camp.id}-${childId}')">Show more ▼</button>
+                    ` : ''}
                     <div class="camp-actions">
                         ${isFinalized ? 
                             '<span style="color: #28a745; font-size: 13px;">✓ Added to Final Schedule</span>' :
