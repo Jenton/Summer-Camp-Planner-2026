@@ -1443,7 +1443,7 @@
             skippedWeeksRef = database.ref(`families/${familyCode}/skippedWeeks`);
         }
 
-        function submitFamilyCode() {
+        async function submitFamilyCode() {
             const input = document.getElementById('familyCodeInput').value.trim();
             const agreed = document.getElementById('agreeTerms').checked;
 
@@ -1463,19 +1463,73 @@
                 return;
             }
 
-            familyCode = input.toLowerCase();
-            localStorage.setItem('familyCode', familyCode);
+            const code = input.toLowerCase();
             
-            initializeFirebaseRefs();
-            isAuthenticated = true;
+            // Check if this family code already exists
+            const familyRef = database.ref(`families/${code}`);
             
-            document.getElementById('familyCodeModal').style.display = 'none';
-            
-            // Show reminder to save code
-            showToast(`✅ Family code saved: "${familyCode}" - Share this with your spouse!`, 'success');
-            
-            // Continue with app initialization
-            continueInit();
+            try {
+                const snapshot = await familyRef.once('value');
+                
+                if (snapshot.exists()) {
+                    // Existing family - let them in
+                    familyCode = code;
+                    localStorage.setItem('familyCode', familyCode);
+                    initializeFirebaseRefs();
+                    isAuthenticated = true;
+                    document.getElementById('familyCodeModal').style.display = 'none';
+                    showToast(`✅ Welcome back! Family code: "${familyCode}"`, 'success');
+                    continueInit();
+                    return;
+                }
+                
+                // New family - check capacity (max 100 families)
+                const MAX_FAMILIES = 100;
+                const counterRef = database.ref('familyCounter');
+                
+                // Use transaction to safely increment counter
+                const result = await counterRef.transaction((currentCount) => {
+                    if (currentCount === null) {
+                        return 1; // First family
+                    }
+                    
+                    if (currentCount >= MAX_FAMILIES) {
+                        return; // Abort - at capacity
+                    }
+                    
+                    return currentCount + 1; // Increment
+                });
+                
+                if (!result.committed) {
+                    // At capacity
+                    alert(`Sorry, we've reached maximum capacity (${MAX_FAMILIES} families). The planner is currently full. Please try again later or contact us for more information.`);
+                    return;
+                }
+                
+                // Successfully claimed a spot - create family
+                const familyNumber = result.snapshot.val();
+                await familyRef.set({
+                    createdAt: new Date().toISOString(),
+                    familyNumber: familyNumber,
+                    childProfiles: { child1: null, child2: null },
+                    shortlist: { child1: [], child2: [] },
+                    finalSchedule: { child1: [], child2: [] }
+                });
+                
+                familyCode = code;
+                localStorage.setItem('familyCode', familyCode);
+                initializeFirebaseRefs();
+                isAuthenticated = true;
+                document.getElementById('familyCodeModal').style.display = 'none';
+                
+                // Show success message with their number
+                showToast(`✅ Welcome! You are family #${familyNumber} of ${MAX_FAMILIES}. Share code "${familyCode}" with your spouse!`, 'success');
+                continueInit();
+                
+            } catch (error) {
+                console.error('Error checking capacity:', error);
+                alert('Error checking availability. Please try again.');
+            }
         }
 
         function showTerms() {
@@ -2020,7 +2074,7 @@
                         <div class="camp-name">${camp.name}</div>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <div class="camp-week">Week ${camp.week}</div>
-                            ${camp.city ? `<div class="city-badge ${camp.city.toLowerCase().replace(' ', '-')}">${camp.city}</div>` : ''}
+                            ${camp.city ? '<div class="city-badge ' + camp.city.toLowerCase().replace(' ', '-') + '">' + camp.city + '</div>' : ''}
                         </div>
                     </div>
                     <div class="camp-details">
@@ -3260,7 +3314,7 @@
                         </div>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <div class="camp-week">Week ${camp.week}</div>
-                            ${camp.city ? `<div class="city-badge ${camp.city.toLowerCase().replace(' ', '-')}">${camp.city}</div>` : ''}
+                            ${camp.city ? '<div class="city-badge ' + camp.city.toLowerCase().replace(' ', '-') + '">' + camp.city + '</div>' : ''}
                         </div>
                     </div>
                     <div class="camp-details">
@@ -3630,6 +3684,37 @@
             // User has a code, continue
             continueInit();
         }
+
+        // Admin function to check current capacity
+        // Open browser console and run: checkCapacity()
+        async function checkCapacity() {
+            try {
+                const counterRef = database.ref('familyCounter');
+                const snapshot = await counterRef.once('value');
+                const count = snapshot.val() || 0;
+                const MAX_FAMILIES = 100;
+                
+                console.log('=================================');
+                console.log('CAMP PLANNER CAPACITY STATUS');
+                console.log('=================================');
+                console.log(`Current families: ${count} / ${MAX_FAMILIES}`);
+                console.log(`Spots remaining: ${MAX_FAMILIES - count}`);
+                console.log(`Capacity: ${((count / MAX_FAMILIES) * 100).toFixed(1)}%`);
+                console.log('=================================');
+                
+                return {
+                    current: count,
+                    max: MAX_FAMILIES,
+                    remaining: MAX_FAMILIES - count,
+                    percentFull: ((count / MAX_FAMILIES) * 100).toFixed(1)
+                };
+            } catch (error) {
+                console.error('Error checking capacity:', error);
+            }
+        }
+        
+        // Make checkCapacity available globally
+        window.checkCapacity = checkCapacity;
 
         async function continueInit() {
             const success = await loadCampsData();
