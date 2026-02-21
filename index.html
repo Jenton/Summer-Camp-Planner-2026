@@ -242,11 +242,14 @@
             margin-bottom: 12px;
         }
         
-        .camp-description.truncated {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
+        /* Only truncate on mobile - show full description on desktop */
+        @media (max-width: 768px) {
+            .camp-description.truncated {
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
         }
         
         .show-more-btn {
@@ -259,6 +262,13 @@
             padding: 0;
             margin-top: 5px;
             display: inline-block;
+        }
+        
+        /* Hide show-more button on desktop (descriptions are full) */
+        @media (min-width: 769px) {
+            .show-more-btn {
+                display: none;
+            }
         }
         
         .show-more-btn:hover {
@@ -1795,6 +1805,11 @@
 
         // Save profiles to Firebase
         function saveProfiles() {
+            // Check authentication first
+            if (!requireAuth('profile')) {
+                return; // User needs to authenticate
+            }
+            
             childProfiles = {
                 child1: {
                     name: document.getElementById('child1Name').value,
@@ -2188,6 +2203,11 @@
         }
 
         function addToShortlist(campId, childId) {
+            // Check authentication first
+            if (!requireAuth('shortlist')) {
+                return; // User needs to authenticate
+            }
+            
             // Ensure shortlist has proper structure
             if (!shortlist || typeof shortlist !== 'object') {
                 shortlist = { child1: [], child2: [] };
@@ -2216,6 +2236,11 @@
 
         // Add camp to final schedule
         function addToFinalSchedule(campId, childId) {
+            // Check authentication first
+            if (!requireAuth('final')) {
+                return; // User needs to authenticate
+            }
+            
             const camp = campsData.find(c => c.id === campId);
             if (!camp) return;
 
@@ -3765,16 +3790,50 @@
 
         // Initialize
         async function init() {
-            // Check if user has a family code
-            if (!checkFamilyCode()) {
-                // Show family code modal
-                hideLoading();
-                document.getElementById('familyCodeModal').style.display = 'flex';
-                return;
+            // Check if user has a family code (but don't require it)
+            const hasCode = checkFamilyCode();
+            
+            if (hasCode) {
+                // User has a code - load their data
+                isAuthenticated = true;
+            } else {
+                // No code - allow browsing in guest mode
+                isAuthenticated = false;
             }
-
-            // User has a code, continue
+            
+            // Always continue to show the app
             continueInit();
+        }
+
+        // Check authentication before save actions
+        function requireAuth(actionName) {
+            if (isAuthenticated) {
+                return true; // Already authenticated
+            }
+            
+            // Show modal with context
+            const modal = document.getElementById('familyCodeModal');
+            const existingMessage = modal.querySelector('.auth-context-message');
+            
+            // Add or update context message
+            if (!existingMessage) {
+                const header = modal.querySelector('h2');
+                const contextMsg = document.createElement('p');
+                contextMsg.className = 'auth-context-message';
+                contextMsg.style.cssText = 'color: #666; margin: 10px 0 20px 0; font-size: 14px;';
+                header.after(contextMsg);
+            }
+            
+            const contextElement = modal.querySelector('.auth-context-message');
+            const messages = {
+                'shortlist': '🎯 To save camps to your shortlist, please create a family code first.',
+                'profile': '👶 To save child profiles, please create a family code first.',
+                'final': '📅 To save to your final schedule, please create a family code first.'
+            };
+            contextElement.textContent = messages[actionName] || '💾 To save your data, please create a family code first.';
+            
+            modal.style.display = 'flex';
+            return false; // Not authenticated
         }
 
         // Admin function to check current capacity
@@ -3838,11 +3897,13 @@
                 setupEventListeners();
                 renderCamps();
                 
-                // Load shortlist, profiles, final schedule, and skipped weeks from Firebase
-                loadShortlistFromFirebase();
-                loadProfilesFromFirebase();
-                loadFinalScheduleFromFirebase();
-                loadSkippedWeeksFromFirebase();
+                // Only load from Firebase if authenticated
+                if (isAuthenticated) {
+                    loadShortlistFromFirebase();
+                    loadProfilesFromFirebase();
+                    loadFinalScheduleFromFirebase();
+                    loadSkippedWeeksFromFirebase();
+                }
             }
         }
 
