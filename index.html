@@ -1047,7 +1047,10 @@
         <!-- Family Code Modal -->
         <div id="familyCodeModal" class="modal" style="display: none;">
             <div class="modal-content">
-                <h2>Welcome to Summer Camp Planner 2026</h2>
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                    <h2 style="margin: 0;">Welcome to Summer Camp Planner 2026</h2>
+                    <button onclick="closeAuthModal()" style="background: none; border: none; font-size: 28px; color: #999; cursor: pointer; padding: 0; line-height: 1;" title="Close">&times;</button>
+                </div>
                 <p style="margin-bottom: 20px;">This is a FREE community tool to help San Ramon families plan summer camps.</p>
                 
                 <div class="warning-box">
@@ -1079,8 +1082,11 @@
                             and <a href="#" onclick="showPrivacy(); return false;" style="color: #FF6600;">Privacy Policy</a>
                         </label>
                     </div>
-                    <button class="btn btn-primary" onclick="submitFamilyCode()" style="width: 100%; padding: 14px; font-size: 16px;">
-                        Continue
+                    <button class="btn btn-primary" onclick="submitFamilyCode()" style="width: 100%; padding: 14px; font-size: 16px; margin-bottom: 10px;">
+                        Create Family Code
+                    </button>
+                    <button onclick="closeAuthModal()" style="width: 100%; padding: 12px; font-size: 14px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; color: #666;">
+                        Browse Without Saving
                     </button>
                 </div>
             </div>
@@ -3834,6 +3840,18 @@
             
             modal.style.display = 'flex';
             return false; // Not authenticated
+        }
+
+        // Close auth modal (allows browsing without saving)
+        function closeAuthModal() {
+            const modal = document.getElementById('familyCodeModal');
+            modal.style.display = 'none';
+            
+            // Remove context message if it exists
+            const contextMsg = modal.querySelector('.auth-context-message');
+            if (contextMsg) {
+                contextMsg.remove();
+            }
         }
 
         // Admin function to check current capacity
