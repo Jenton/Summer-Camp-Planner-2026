@@ -2610,9 +2610,12 @@
             const conflicts = [];
             
             // Filter out Extended Care camps - they're meant to supplement main camps
-            const mainCamps = camps.filter(camp => 
-                !camp.name.toLowerCase().includes('extended care')
-            );
+            // Also filter out any camps with "no camp" in the name (placeholder entries)
+            const mainCamps = camps.filter(camp => {
+                const name = camp.name.toLowerCase();
+                return !name.includes('extended care') && 
+                       !name.includes('no camp');
+            });
             
             // Group main camps by week
             const campsByWeek = {};
@@ -2666,7 +2669,7 @@
                     return { fullDay: true, morning: false, afternoon: false };
                 }
                 
-                // Extract all time mentions with more flexible regex
+                // Extract all time mentions with flexible regex
                 // Matches: "9:00 am", "12:00pm", "3:30 PM", etc.
                 const times = timeStr.match(/\d+:\d+\s*(am|pm)/gi);
                 
@@ -2679,20 +2682,32 @@
                     };
                 }
                 
-                // Get the END time (last time mention)
+                // Get the END time (last time mention in the range)
                 const endTime = times[times.length - 1].toLowerCase();
                 
-                // Determine if morning or afternoon based on END time
-                const endsWithAM = endTime.includes('am');
-                const endsWithPM = endTime.includes('pm');
+                // Parse the end time to get hour
+                const endMatch = endTime.match(/(\d+):(\d+)\s*(am|pm)/i);
+                if (!endMatch) {
+                    return {
+                        fullDay: false,
+                        morning: hasAM,
+                        afternoon: hasPM
+                    };
+                }
                 
-                // Check if end time is 12:xx PM (which is actually afternoon/noon)
-                const is12PM = endsWithPM && endTime.includes('12:');
+                const endHour = parseInt(endMatch[1]);
+                const endPeriod = endMatch[3].toLowerCase();
+                
+                // Determine if morning or afternoon based on END time
+                // Morning: ends at or before 12:00 PM (noon)
+                // Afternoon: ends after 12:00 PM
+                const isMorning = endPeriod === 'am' || (endPeriod === 'pm' && endHour === 12);
+                const isAfternoon = endPeriod === 'pm' && endHour !== 12;
                 
                 return {
                     fullDay: false,
-                    morning: endsWithAM || is12PM,  // Ends by noon
-                    afternoon: endsWithPM && !is12PM  // Ends after noon
+                    morning: isMorning,
+                    afternoon: isAfternoon
                 };
             };
 
@@ -2716,7 +2731,7 @@
                 return 'both-afternoon';
             }
 
-            // No conflict
+            // No conflict - camps in different periods (morning vs afternoon)
             return null;
         }
 
@@ -3056,11 +3071,11 @@
                                     <tr>
                                         <td><strong>Week ${week}</strong></td>
                                         <td style="font-size: 11px;">${weekDates}</td>
-                                        <td>
+                                        <td style="vertical-align: top;">
                                             <textarea 
                                                 placeholder="Add notes..."
                                                 onchange="saveCalendarNote('${week}', this.value)"
-                                                style="width: 100%; min-height: 60px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px; font-family: inherit; resize: vertical;"
+                                                style="width: 100%; height: 100%; min-height: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px; font-family: inherit; resize: vertical; box-sizing: border-box;"
                                                 class="no-print-interactive"
                                             >${getCombinedNotes(week)}</textarea>
                                             <div class="print-only" style="font-size: 11px; white-space: pre-wrap;">${getCombinedNotes(week)}</div>
@@ -3083,7 +3098,7 @@
                                                                style="cursor: pointer;">
                                                         <span>${camp.registered ? '✅ Registered' : '⬜ Mark as registered'}</span>
                                                     </label>
-                                                    ${camp.registerLink ? `
+                                                    ${camp.registerLink && !camp.registered ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
                                                     ` : ''}
                                                     <div class="print-only" style="font-size: 10px; margin-top: 3px;">
@@ -3115,7 +3130,7 @@
                                                                style="cursor: pointer;">
                                                         <span>${camp.registered ? '✅ Registered' : '⬜ Mark as registered'}</span>
                                                     </label>
-                                                    ${camp.registerLink ? `
+                                                    ${camp.registerLink && !camp.registered ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
                                                     ` : ''}
                                                     <div class="print-only" style="font-size: 10px; margin-top: 3px;">
