@@ -1030,6 +1030,63 @@
                 font-size: 20px;
             }
         }
+
+        /* Print Styles for Calendar Grid */
+        @media print {
+            /* Hide UI elements */
+            header, footer, .tabs, .controls, .btn, .no-print, .no-print-interactive {
+                display: none !important;
+            }
+            
+            /* Show print-only content */
+            .print-only {
+                display: block !important;
+            }
+            
+            /* Make table fit on page */
+            .calendar-table {
+                width: 100%;
+                font-size: 9pt;
+                page-break-inside: avoid;
+            }
+            
+            .calendar-table th,
+            .calendar-table td {
+                padding: 6px;
+                font-size: 9pt;
+            }
+            
+            .calendar-cell-camp {
+                page-break-inside: avoid;
+                font-size: 8pt;
+            }
+            
+            /* Adjust page layout */
+            @page {
+                size: letter landscape;
+                margin: 0.5in;
+            }
+            
+            body {
+                font-size: 10pt;
+            }
+            
+            /* Hide scroll button */
+            #scrollToTop {
+                display: none !important;
+            }
+        }
+        
+        /* Print-only and no-print classes */
+        .print-only {
+            display: none;
+        }
+        
+        @media print {
+            .print-only {
+                display: block !important;
+            }
+        }
     </style>
 
     <!-- Firebase SDK -->
@@ -1299,7 +1356,6 @@
                             <div class="view-toggle">
                                 <button class="active" data-final-view="cards">📋 Week Cards</button>
                                 <button data-final-view="calendar">📅 Calendar Grid</button>
-                                <button data-final-view="list">📄 List View</button>
                             </div>
                         </div>
                         <div class="control-group">
@@ -2664,10 +2720,8 @@
             
             if (currentFinalView === 'cards') {
                 renderWeekCardsView();
-            } else if (currentFinalView === 'calendar') {
+            } else {
                 renderCalendarGridView();
-            } else if (currentFinalView === 'list') {
-                renderListDetailView();
             }
         }
 
@@ -2900,16 +2954,17 @@
                             <div style="font-size: 48px; margin-bottom: 15px;">📱</div>
                             <h3 style="color: #333; margin-bottom: 10px;">Calendar View Not Available</h3>
                             <p style="margin-bottom: 20px;">The calendar table is too wide for mobile screens.</p>
-                            <p style="color: #FF6600; font-weight: 600;">Please switch to Week Cards or List view above.</p>
+                            <p style="color: #FF6600; font-weight: 600;">Please switch to Week Cards view above.</p>
                         </div>
                     </div>
-                    <table class="calendar-table">
+                    <table class="calendar-table print-friendly">
                         <thead>
                             <tr>
-                                <th>Week</th>
-                                <th>Dates</th>
-                                <th style="background: ${child1Color};">${child1Name}</th>
-                                <th style="background: ${child2Color};">${child2Name}</th>
+                                <th style="width: 8%;">Week</th>
+                                <th style="width: 12%;">Dates</th>
+                                <th style="width: 20%;">Notes</th>
+                                <th style="background: ${child1Color}; width: 30%;">${child1Name}</th>
+                                <th style="background: ${child2Color}; width: 30%;">${child2Name}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2917,30 +2972,79 @@
                                 const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
                                 const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
                                 const weekDates = getWeekDates(week);
-
+                                
+                                // Check for skipped weeks
+                                const child1Skipped = isWeekSkipped(week, 'child1');
+                                const child2Skipped = isWeekSkipped(week, 'child2');
+                                
+                                // Detect conflicts
+                                const child1Conflicts = detectConflicts(child1Camps);
+                                const child2Conflicts = detectConflicts(child2Camps);
+                                
+                                // Get notes
+                                const child1Note = child1Camps[0]?.notes || '';
+                                const child2Note = child2Camps[0]?.notes || '';
+                                const child1SkipNote = getSkipNote(week, 'child1');
+                                const child2SkipNote = getSkipNote(week, 'child2');
+                                
                                 return `
                                     <tr>
                                         <td><strong>Week ${week}</strong></td>
-                                        <td>${weekDates}</td>
+                                        <td style="font-size: 11px;">${weekDates}</td>
                                         <td>
-                                            ${child1Camps.length > 0 ? child1Camps.map(camp => `
-                                                <div class="calendar-cell-camp" style="border-left: 3px solid ${child1Color};">
-                                                    <strong>${camp.name}</strong><br>
-                                                    📍 ${camp.location}<br>
-                                                    ⏰ ${camp.time}<br>
-                                                    ${camp.registered ? '✅ Registered' : '⬜ Not registered'}
-                                                </div>
-                                            `).join('') : '<span style="color: #999;">No camp</span>'}
+                                            <textarea 
+                                                placeholder="Add notes..."
+                                                onchange="saveCalendarNote('${week}', this.value)"
+                                                style="width: 100%; min-height: 60px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 11px; font-family: inherit; resize: vertical;"
+                                                class="no-print-interactive"
+                                            >${getCombinedNotes(week)}</textarea>
+                                            <div class="print-only" style="font-size: 11px; white-space: pre-wrap;">${getCombinedNotes(week)}</div>
                                         </td>
                                         <td>
-                                            ${child2Camps.length > 0 ? child2Camps.map(camp => `
-                                                <div class="calendar-cell-camp" style="border-left: 3px solid ${child2Color};">
-                                                    <strong>${camp.name}</strong><br>
-                                                    📍 ${camp.location}<br>
-                                                    ⏰ ${camp.time}<br>
-                                                    ${camp.registered ? '✅ Registered' : '⬜ Not registered'}
+                                            ${child1Skipped ? 
+                                                `<div style="color: #666; font-size: 12px; background: #e8f5e9; padding: 8px; border-radius: 4px;">
+                                                    ✓ Skip week${child1SkipNote ? ': ' + child1SkipNote : ''}
+                                                </div>` :
+                                                child1Camps.length > 0 ? child1Camps.map(camp => `
+                                                <div class="calendar-cell-camp" style="border-left: 3px solid ${child1Color}; margin-bottom: 8px;">
+                                                    <div style="font-weight: 600; font-size: 12px; margin-bottom: 3px;">${camp.name}</div>
+                                                    <div style="font-size: 10px; color: #666;">
+                                                        ⏰ ${camp.time}<br>
+                                                        📍 ${camp.location}
+                                                    </div>
+                                                    ${camp.registerLink ? `
+                                                        <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
+                                                    ` : ''}
                                                 </div>
-                                            `).join('') : '<span style="color: #999;">No camp</span>'}
+                                            `).join('') : '<span style="color: #999; font-size: 11px;">No camp</span>'}
+                                            ${child1Conflicts.length > 0 ? `
+                                                <div class="no-print" style="font-size: 10px; color: #856404; margin-top: 5px; padding: 4px; background: #fff3cd; border-radius: 3px;">
+                                                    ⚠️ Time conflicts
+                                                </div>
+                                            ` : ''}
+                                        </td>
+                                        <td>
+                                            ${child2Skipped ? 
+                                                `<div style="color: #666; font-size: 12px; background: #e8f5e9; padding: 8px; border-radius: 4px;">
+                                                    ✓ Skip week${child2SkipNote ? ': ' + child2SkipNote : ''}
+                                                </div>` :
+                                                child2Camps.length > 0 ? child2Camps.map(camp => `
+                                                <div class="calendar-cell-camp" style="border-left: 3px solid ${child2Color}; margin-bottom: 8px;">
+                                                    <div style="font-weight: 600; font-size: 12px; margin-bottom: 3px;">${camp.name}</div>
+                                                    <div style="font-size: 10px; color: #666;">
+                                                        ⏰ ${camp.time}<br>
+                                                        📍 ${camp.location}
+                                                    </div>
+                                                    ${camp.registerLink ? `
+                                                        <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
+                                                    ` : ''}
+                                                </div>
+                                            `).join('') : '<span style="color: #999; font-size: 11px;">No camp</span>'}
+                                            ${child2Conflicts.length > 0 ? `
+                                                <div class="no-print" style="font-size: 10px; color: #856404; margin-top: 5px; padding: 4px; background: #fff3cd; border-radius: 3px;">
+                                                    ⚠️ Time conflicts
+                                                </div>
+                                            ` : ''}
                                         </td>
                                     </tr>
                                 `;
@@ -2954,6 +3058,39 @@
             if (container) {
                 container.innerHTML = html;
             }
+        }
+        
+        // Helper function to get combined notes for a week
+        function getCombinedNotes(week) {
+            const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
+            const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
+            const child1Note = child1Camps[0]?.notes || '';
+            const child2Note = child2Camps[0]?.notes || '';
+            
+            // Combine notes if both exist
+            if (child1Note && child2Note) {
+                const child1Name = childProfiles.child1?.name || 'Child 1';
+                const child2Name = childProfiles.child2?.name || 'Child 2';
+                return `${child1Name}: ${child1Note}\n${child2Name}: ${child2Note}`;
+            }
+            return child1Note || child2Note || '';
+        }
+        
+        // Save notes from calendar grid view
+        function saveCalendarNote(week, notes) {
+            const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
+            const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
+            
+            // Save to both children's camps for this week
+            child1Camps.forEach(camp => {
+                camp.notes = notes;
+            });
+            child2Camps.forEach(camp => {
+                camp.notes = notes;
+            });
+            
+            // Save to Firebase
+            saveFinalScheduleToFirebase();
         }
 
         // Render List Detail View
@@ -3271,9 +3408,6 @@
                                 <span class="week-toggle">▼</span>
                                 <span>Week ${week}</span>
                             </div>
-                            <div style="display: flex; gap: 10px; align-items: center;">
-                                ${hasConflict ? '<span style="color: #ffc107;">⚡ Overlap</span>' : ''}
-                            </div>
                         </div>
                         <div class="week-camps">
                             ${isEmpty ? '<div class="week-empty">No camps selected for this week</div>' : ''}
@@ -3303,11 +3437,6 @@
                                        `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
                                             ✓ Week skipped${getSkipNote(week, 'child1') ? ': ' + getSkipNote(week, 'child1') : ' - no camp needed'}
                                         </div>`)}
-                                    ${child1WeekConflicts.length > 0 ? `
-                                        <div style="font-size: 12px; color: #856404; margin-top: 5px; padding: 5px; background: #fff3cd; border-radius: 4px;">
-                                            💡 Time overlap in this week
-                                        </div>
-                                    ` : ''}
                                 </div>
                             ` : ''}
                             ${showChild2 ? `
@@ -3336,11 +3465,6 @@
                                        `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
                                             ✓ Week skipped${getSkipNote(week, 'child2') ? ': ' + getSkipNote(week, 'child2') : ' - no camp needed'}
                                         </div>`)}
-                                    ${child2WeekConflicts.length > 0 ? `
-                                        <div style="font-size: 12px; color: #856404; margin-top: 5px; padding: 5px; background: #fff3cd; border-radius: 4px;">
-                                            💡 Time overlap in this week
-                                        </div>
-                                    ` : ''}
                                 </div>
                             ` : ''}
                         </div>
