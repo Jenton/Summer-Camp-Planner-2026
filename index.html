@@ -2655,31 +2655,39 @@
                 // Check if it's a full day camp (covers both AM and PM)
                 const hasAM = timeStr.includes('am');
                 const hasPM = timeStr.includes('pm');
-                const isFullDay = hasAM && hasPM;
                 
-                // If full day, return early
-                if (isFullDay) {
+                // If it has both AM and PM, it's full day
+                if (hasAM && hasPM) {
                     return { fullDay: true, morning: false, afternoon: false };
                 }
                 
-                // Extract end time to determine if it's morning or afternoon
-                // Look for patterns like "9:00 am-12:00 pm" or "1:00 pm-4:00 pm"
-                const timeMatch = timeStr.match(/(\d+:\d+)\s*(am|pm)/gi);
+                // Extract all time mentions with more flexible regex
+                // Matches: "9:00 am", "12:00pm", "3:30 PM", etc.
+                const times = timeStr.match(/\d+:\d+\s*(am|pm)/gi);
                 
-                if (timeMatch && timeMatch.length >= 2) {
-                    // Get the last time mention (end time)
-                    const endTime = timeMatch[timeMatch.length - 1].toLowerCase();
-                    const isMorning = endTime.includes('am') || (endTime.includes('pm') && endTime.includes('12:'));
-                    const isAfternoon = endTime.includes('pm') && !endTime.includes('12:');
-                    
-                    return { fullDay: false, morning: isMorning, afternoon: isAfternoon };
+                if (!times || times.length === 0) {
+                    // Fallback: just check AM/PM presence
+                    return {
+                        fullDay: false,
+                        morning: hasAM,
+                        afternoon: hasPM
+                    };
                 }
                 
-                // Fallback: just check if it has AM or PM
+                // Get the END time (last time mention)
+                const endTime = times[times.length - 1].toLowerCase();
+                
+                // Determine if morning or afternoon based on END time
+                const endsWithAM = endTime.includes('am');
+                const endsWithPM = endTime.includes('pm');
+                
+                // Check if end time is 12:xx PM (which is actually afternoon/noon)
+                const is12PM = endsWithPM && endTime.includes('12:');
+                
                 return {
                     fullDay: false,
-                    morning: hasAM && !hasPM,
-                    afternoon: hasPM && !hasAM
+                    morning: endsWithAM || is12PM,  // Ends by noon
+                    afternoon: endsWithPM && !is12PM  // Ends after noon
                 };
             };
 
@@ -2694,7 +2702,8 @@
                 return 'fullday-conflict';
             }
 
-            // Morning/afternoon conflicts
+            // Morning/afternoon conflicts  
+            // Only flag if BOTH are in same period
             if (time1Info.morning && time2Info.morning) {
                 return 'both-morning';
             }
@@ -3359,10 +3368,6 @@
             const child1Color = childProfiles.child1?.color || '#FF6600';
             const child2Color = childProfiles.child2?.color || '#4A90E2';
 
-            // Detect conflicts
-            const child1Conflicts = detectConflicts(shortlist.child1);
-            const child2Conflicts = detectConflicts(shortlist.child2);
-
             const statsHtml = `
                 <div class="stat-card" style="border-top: 4px solid ${child1Color};">
                     <div class="stat-value" style="color: ${child1Color};">${child1Count}</div>
@@ -3384,31 +3389,7 @@
 
             const statsContainer = document.getElementById('stats');
             if (statsContainer) {
-                let fullHtml = statsHtml;
-                
-                // Add conflict warnings if any
-                if (child1Conflicts.length > 0 || child2Conflicts.length > 0) {
-                    fullHtml += '<div style="grid-column: 1 / -1; margin-top: 10px;">';
-                    if (child1Conflicts.length > 0) {
-                        fullHtml += `
-                            <div style="margin-bottom: 10px;">
-                                <div style="font-weight: 600; color: ${child1Color}; margin-bottom: 5px;">${child1Name}:</div>
-                                ${renderConflictWarnings(child1Conflicts, 'child1')}
-                            </div>
-                        `;
-                    }
-                    if (child2Conflicts.length > 0) {
-                        fullHtml += `
-                            <div>
-                                <div style="font-weight: 600; color: ${child2Color}; margin-bottom: 5px;">${child2Name}:</div>
-                                ${renderConflictWarnings(child2Conflicts, 'child2')}
-                            </div>
-                        `;
-                    }
-                    fullHtml += '</div>';
-                }
-                
-                statsContainer.innerHTML = fullHtml;
+                statsContainer.innerHTML = statsHtml;
             }
         }
 
