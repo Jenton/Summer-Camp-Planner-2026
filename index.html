@@ -2609,9 +2609,14 @@
         function detectConflicts(camps) {
             const conflicts = [];
             
-            // Group camps by week
+            // Filter out Extended Care camps - they're meant to supplement main camps
+            const mainCamps = camps.filter(camp => 
+                !camp.name.toLowerCase().includes('extended care')
+            );
+            
+            // Group main camps by week
             const campsByWeek = {};
-            camps.forEach((camp, index) => {
+            mainCamps.forEach((camp, index) => {
                 const week = camp.week;
                 if (!campsByWeek[week]) {
                     campsByWeek[week] = [];
@@ -2891,6 +2896,16 @@
                                     <br><a href="#" onclick="switchToTab('shortlist'); return false;" style="color: #FF6600;">Browse camps</a>
                                 </div>
                             ` : ''}
+                            
+                            <!-- Week-level notes (after both children) -->
+                            ${child1Camps.length > 0 || child2Camps.length > 0 ? `
+                                <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #e0e0e0;">
+                                    <label style="font-size: 13px; font-weight: 600; color: #666; display: block; margin-bottom: 8px;">📝 Week ${week} Notes:</label>
+                                    <textarea placeholder="Add notes for this week (e.g., pack lunch, carpool arrangements, vacation...)..." 
+                                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; min-height: 60px; font-family: inherit; resize: vertical;"
+                                           onchange="saveWeekNote('${week}', this.value)">${weekNotes[week] || ''}</textarea>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -2968,9 +2983,6 @@
 
         // Render individual camp card in final schedule
         function renderFinalCampCard(camp, childId, color, week) {
-            // Only show notes field for first child's first camp of the week (to avoid duplication)
-            const showWeekNotes = childId === 'child1';
-            
             return `
                 <div class="camp-final-card">
                     <div class="camp-final-name">${camp.name}</div>
@@ -2988,14 +3000,6 @@
                         ${camp.registerLink ? `<a href="${camp.registerLink}" target="_blank" class="btn btn-secondary btn-small">Register →</a>` : ''}
                         <button class="btn btn-small" onclick="removeFromFinalSchedule('${camp.id}', '${childId}')">Remove</button>
                     </div>
-                    ${showWeekNotes ? `
-                        <div class="camp-notes" style="margin-top: 10px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
-                            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">📝 Week ${week} Notes:</label>
-                            <textarea placeholder="Add notes for this week (e.g., pack lunch, carpool with...)..." 
-                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; min-height: 50px; font-family: inherit; resize: vertical;"
-                                   onchange="saveWeekNote('${week}', this.value)">${weekNotes[week] || ''}</textarea>
-                        </div>
-                    ` : ''}
                 </div>
             `;
         }
@@ -3077,7 +3081,7 @@
                                                         <input type="checkbox" ${camp.registered ? 'checked' : ''} 
                                                                onchange="toggleRegistered('${camp.id}', 'child1')"
                                                                style="cursor: pointer;">
-                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Register'}</span>
+                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Mark as registered'}</span>
                                                     </label>
                                                     ${camp.registerLink ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
@@ -3109,7 +3113,7 @@
                                                         <input type="checkbox" ${camp.registered ? 'checked' : ''} 
                                                                onchange="toggleRegistered('${camp.id}', 'child2')"
                                                                style="cursor: pointer;">
-                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Register'}</span>
+                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Mark as registered'}</span>
                                                     </label>
                                                     ${camp.registerLink ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
