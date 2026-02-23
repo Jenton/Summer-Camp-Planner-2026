@@ -1541,12 +1541,14 @@
         let profilesRef = null;
         let finalScheduleRef = null;
         let skippedWeeksRef = null;
+        let weekNotesRef = null;
 
         let campsData = [];
         let shortlist = { child1: [], child2: [] };
         let finalSchedule = { child1: [], child2: [] };
         let childProfiles = { child1: {}, child2: {} };
         let skippedWeeks = { child1: [], child2: [] };
+        let weekNotes = {}; // { '1': 'notes for week 1', '2': 'notes for week 2', ... }
         let currentTab = 'browse';
         let currentView = 'calendar';
         let currentFinalView = 'cards';
@@ -1570,6 +1572,7 @@
             profilesRef = database.ref(`families/${familyCode}/profiles`);
             finalScheduleRef = database.ref(`families/${familyCode}/finalSchedule`);
             skippedWeeksRef = database.ref(`families/${familyCode}/skippedWeeks`);
+            weekNotesRef = database.ref(`families/${familyCode}/weekNotes`);
         }
 
         async function submitFamilyCode() {
@@ -2352,6 +2355,12 @@
             }
         }
 
+        // Save week-level notes
+        function saveWeekNote(week, notes) {
+            weekNotes[week] = notes;
+            saveWeekNotesToFirebase();
+        }
+
         // Save final schedule to Firebase
         function saveFinalScheduleToFirebase() {
             if (!finalScheduleRef) return;
@@ -2555,6 +2564,31 @@
             });
         }
 
+        // Load week notes from Firebase
+        function loadWeekNotesFromFirebase() {
+            if (!weekNotesRef) return;
+            
+            weekNotesRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                weekNotes = data || {};
+                console.log('✓ Loaded week notes from Firebase:', weekNotes);
+                
+                // Re-render if on final tab
+                if (currentTab === 'final') {
+                    renderFinalSchedule();
+                }
+            });
+        }
+
+        // Save week notes to Firebase
+        function saveWeekNotesToFirebase() {
+            if (!weekNotesRef) return;
+            
+            weekNotesRef.set(weekNotes)
+                .then(() => console.log('✓ Saved week notes to Firebase'))
+                .catch(error => console.error('Error saving week notes:', error));
+        }
+
         // Toggle week section (Shortlist)
         function toggleWeekSection(week) {
             const section = document.querySelector(`.week-section[data-week="${week}"]`);
@@ -2616,43 +2650,55 @@
             const time1 = camp1.time.toLowerCase();
             const time2 = camp2.time.toLowerCase();
 
-            // Helper to determine if a camp is full day
-            const isFullDay = (time) => {
-                return time.includes('am') && time.includes('pm') || 
-                       time.includes('9:00') && (time.includes('4:00') || time.includes('3:00'));
+            // Helper to parse time and determine period
+            const parseTime = (timeStr) => {
+                // Check if it's a full day camp (covers both AM and PM)
+                const hasAM = timeStr.includes('am');
+                const hasPM = timeStr.includes('pm');
+                const isFullDay = hasAM && hasPM;
+                
+                // If full day, return early
+                if (isFullDay) {
+                    return { fullDay: true, morning: false, afternoon: false };
+                }
+                
+                // Extract end time to determine if it's morning or afternoon
+                // Look for patterns like "9:00 am-12:00 pm" or "1:00 pm-4:00 pm"
+                const timeMatch = timeStr.match(/(\d+:\d+)\s*(am|pm)/gi);
+                
+                if (timeMatch && timeMatch.length >= 2) {
+                    // Get the last time mention (end time)
+                    const endTime = timeMatch[timeMatch.length - 1].toLowerCase();
+                    const isMorning = endTime.includes('am') || (endTime.includes('pm') && endTime.includes('12:'));
+                    const isAfternoon = endTime.includes('pm') && !endTime.includes('12:');
+                    
+                    return { fullDay: false, morning: isMorning, afternoon: isAfternoon };
+                }
+                
+                // Fallback: just check if it has AM or PM
+                return {
+                    fullDay: false,
+                    morning: hasAM && !hasPM,
+                    afternoon: hasPM && !hasAM
+                };
             };
 
-            // Helper to determine if a camp is morning
-            const isMorning = (time) => {
-                return time.includes('am') || 
-                       time.includes('9:00') || time.includes('10:00') || time.includes('11:00');
-            };
-
-            // Helper to determine if a camp is afternoon
-            const isAfternoon = (time) => {
-                return time.includes('pm') && !time.includes('am');
-            };
-
-            const camp1FullDay = isFullDay(time1);
-            const camp2FullDay = isFullDay(time2);
-            const camp1Morning = isMorning(time1) && !camp1FullDay;
-            const camp2Morning = isMorning(time2) && !camp2FullDay;
-            const camp1Afternoon = isAfternoon(time1);
-            const camp2Afternoon = isAfternoon(time2);
+            const time1Info = parseTime(time1);
+            const time2Info = parseTime(time2);
 
             // Full day conflicts with anything
-            if (camp1FullDay && camp2FullDay) {
+            if (time1Info.fullDay && time2Info.fullDay) {
                 return 'both-fullday';
             }
-            if (camp1FullDay || camp2FullDay) {
+            if (time1Info.fullDay || time2Info.fullDay) {
                 return 'fullday-conflict';
             }
 
             // Morning/afternoon conflicts
-            if (camp1Morning && camp2Morning) {
+            if (time1Info.morning && time2Info.morning) {
                 return 'both-morning';
             }
-            if (camp1Afternoon && camp2Afternoon) {
+            if (time1Info.afternoon && time2Info.afternoon) {
                 return 'both-afternoon';
             }
 
@@ -2902,7 +2948,7 @@
                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
                         </div>
                     ` : ''}
-                    ${camps.length > 0 ? camps.map(camp => renderFinalCampCard(camp, childId, color)).join('') : 
+                    ${camps.length > 0 ? camps.map(camp => renderFinalCampCard(camp, childId, color, week)).join('') : 
                       (!isSkipped ? '<div style="color: #999; font-size: 13px; padding: 10px; background: #f8f9fa; border-radius: 4px;">No camps scheduled</div>' : 
                        `<div style="color: #666; font-size: 13px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
                             ✓ Week skipped${getSkipNote(week, childId) ? ': ' + getSkipNote(week, childId) : ' - no camp needed'}
@@ -2912,7 +2958,10 @@
         }
 
         // Render individual camp card in final schedule
-        function renderFinalCampCard(camp, childId, color) {
+        function renderFinalCampCard(camp, childId, color, week) {
+            // Only show notes field for first child's first camp of the week (to avoid duplication)
+            const showWeekNotes = childId === 'child1';
+            
             return `
                 <div class="camp-final-card">
                     <div class="camp-final-name">${camp.name}</div>
@@ -2930,11 +2979,14 @@
                         ${camp.registerLink ? `<a href="${camp.registerLink}" target="_blank" class="btn btn-secondary btn-small">Register →</a>` : ''}
                         <button class="btn btn-small" onclick="removeFromFinalSchedule('${camp.id}', '${childId}')">Remove</button>
                     </div>
-                    <div class="camp-notes">
-                        <input type="text" placeholder="Add notes (e.g., pack lunch, grandma pickup)..." 
-                               value="${camp.notes || ''}"
-                               onchange="saveNotes('${camp.id}', '${childId}', this.value)">
-                    </div>
+                    ${showWeekNotes ? `
+                        <div class="camp-notes" style="margin-top: 10px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
+                            <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">📝 Week ${week} Notes:</label>
+                            <textarea placeholder="Add notes for this week (e.g., pack lunch, carpool with...)..." 
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; min-height: 50px; font-family: inherit; resize: vertical;"
+                                   onchange="saveWeekNote('${week}', this.value)">${weekNotes[week] || ''}</textarea>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
@@ -3012,9 +3064,18 @@
                                                         ⏰ ${camp.time}<br>
                                                         📍 ${camp.location}
                                                     </div>
+                                                    <label class="no-print" style="font-size: 10px; display: flex; align-items: center; gap: 4px; margin-top: 3px; cursor: pointer;">
+                                                        <input type="checkbox" ${camp.registered ? 'checked' : ''} 
+                                                               onchange="toggleRegistered('${camp.id}', 'child1')"
+                                                               style="cursor: pointer;">
+                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Register'}</span>
+                                                    </label>
                                                     ${camp.registerLink ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
                                                     ` : ''}
+                                                    <div class="print-only" style="font-size: 10px; margin-top: 3px;">
+                                                        ${camp.registered ? '✅ Registered' : '⬜ Not registered'}
+                                                    </div>
                                                 </div>
                                             `).join('') : '<span style="color: #999; font-size: 11px;">No camp</span>'}
                                             ${child1Conflicts.length > 0 ? `
@@ -3035,9 +3096,18 @@
                                                         ⏰ ${camp.time}<br>
                                                         📍 ${camp.location}
                                                     </div>
+                                                    <label class="no-print" style="font-size: 10px; display: flex; align-items: center; gap: 4px; margin-top: 3px; cursor: pointer;">
+                                                        <input type="checkbox" ${camp.registered ? 'checked' : ''} 
+                                                               onchange="toggleRegistered('${camp.id}', 'child2')"
+                                                               style="cursor: pointer;">
+                                                        <span>${camp.registered ? '✅ Registered' : '⬜ Register'}</span>
+                                                    </label>
                                                     ${camp.registerLink ? `
                                                         <a href="${camp.registerLink}" target="_blank" class="no-print" style="font-size: 10px; color: #FF6600; text-decoration: none; display: inline-block; margin-top: 3px;">Register →</a>
                                                     ` : ''}
+                                                    <div class="print-only" style="font-size: 10px; margin-top: 3px;">
+                                                        ${camp.registered ? '✅ Registered' : '⬜ Not registered'}
+                                                    </div>
                                                 </div>
                                             `).join('') : '<span style="color: #999; font-size: 11px;">No camp</span>'}
                                             ${child2Conflicts.length > 0 ? `
@@ -3060,37 +3130,15 @@
             }
         }
         
-        // Helper function to get combined notes for a week
+        // Helper function to get notes for a week
         function getCombinedNotes(week) {
-            const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
-            const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
-            const child1Note = child1Camps[0]?.notes || '';
-            const child2Note = child2Camps[0]?.notes || '';
-            
-            // Combine notes if both exist
-            if (child1Note && child2Note) {
-                const child1Name = childProfiles.child1?.name || 'Child 1';
-                const child2Name = childProfiles.child2?.name || 'Child 2';
-                return `${child1Name}: ${child1Note}\n${child2Name}: ${child2Note}`;
-            }
-            return child1Note || child2Note || '';
+            return weekNotes[week] || '';
         }
         
         // Save notes from calendar grid view
         function saveCalendarNote(week, notes) {
-            const child1Camps = (finalSchedule.child1 || []).filter(c => c.week === week);
-            const child2Camps = (finalSchedule.child2 || []).filter(c => c.week === week);
-            
-            // Save to both children's camps for this week
-            child1Camps.forEach(camp => {
-                camp.notes = notes;
-            });
-            child2Camps.forEach(camp => {
-                camp.notes = notes;
-            });
-            
-            // Save to Firebase
-            saveFinalScheduleToFirebase();
+            weekNotes[week] = notes;
+            saveWeekNotesToFirebase();
         }
 
         // Render List Detail View
@@ -4045,6 +4093,7 @@
                     loadProfilesFromFirebase();
                     loadFinalScheduleFromFirebase();
                     loadSkippedWeeksFromFirebase();
+                    loadWeekNotesFromFirebase();
                 }
             }
         }
