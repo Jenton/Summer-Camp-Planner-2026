@@ -1796,11 +1796,18 @@
                 if (!isLoadingFromFirebase) {
                     const data = snapshot.val();
                     if (data && typeof data === 'object') {
-                        // Ensure data has proper structure
-                        shortlist = {
+                        // Load and merge with fresh data
+                        let loadedShortlist = {
                             child1: Array.isArray(data.child1) ? data.child1 : [],
                             child2: Array.isArray(data.child2) ? data.child2 : []
                         };
+                        
+                        // Merge with fresh camp data to get updated fields
+                        shortlist = {
+                            child1: mergeCampsWithFreshData(loadedShortlist.child1),
+                            child2: mergeCampsWithFreshData(loadedShortlist.child2)
+                        };
+                        
                         console.log('✓ Loaded shortlist from Firebase:', shortlist);
                     } else {
                         // Initialize empty shortlist if none exists
@@ -2384,10 +2391,18 @@
                 if (!isLoadingFromFirebase) {
                     const data = snapshot.val();
                     if (data && typeof data === 'object') {
-                        finalSchedule = {
+                        // Load camps from Firebase
+                        let loadedSchedule = {
                             child1: Array.isArray(data.child1) ? data.child1 : [],
                             child2: Array.isArray(data.child2) ? data.child2 : []
                         };
+                        
+                        // Merge with fresh camp data to get updated fields (like actNumber)
+                        finalSchedule = {
+                            child1: mergeCampsWithFreshData(loadedSchedule.child1),
+                            child2: mergeCampsWithFreshData(loadedSchedule.child2)
+                        };
+                        
                         console.log('✓ Loaded final schedule from Firebase:', finalSchedule);
                     } else {
                         finalSchedule = { child1: [], child2: [] };
@@ -2398,6 +2413,24 @@
                         renderFinalSchedule();
                     }
                 }
+            });
+        }
+        
+        // Merge saved camps with fresh data to get new fields
+        function mergeCampsWithFreshData(savedCamps) {
+            return savedCamps.map(savedCamp => {
+                // Find the fresh camp data by ID
+                const freshCamp = campsData.find(c => c.id === savedCamp.id);
+                if (freshCamp) {
+                    // Merge: keep saved fields (registered, notes) but add fresh fields (actNumber, city)
+                    return {
+                        ...freshCamp,           // Fresh data (includes actNumber, city, etc.)
+                        registered: savedCamp.registered,  // Keep saved state
+                        notes: savedCamp.notes            // Keep saved notes
+                    };
+                }
+                // If camp not found in fresh data, return saved version
+                return savedCamp;
             });
         }
 
